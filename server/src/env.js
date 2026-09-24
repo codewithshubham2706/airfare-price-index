@@ -20,3 +20,8 @@ export const env = {
 
   baselineDays: Number(process.env.BASELINE_DAYS || 7),
 };
+
+// Startup guard: the demo default is fine locally, never in production.
+if (env.nodeEnv === 'production' && env.scrapeApiKey.length < 32) {
+  console.warn('[security] SCRAPE_API_KEY is weak (<32 chars) — set a strong generated key in the hosting environment');
+}

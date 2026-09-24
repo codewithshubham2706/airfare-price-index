@@ -13,6 +13,10 @@ jobs:
       - name: Install & test API
         working-directory: server
         run: npm ci && npm test
+      - name: Audit production dependencies
+        run: |
+          npm --prefix server audit --omit=dev --audit-level=high
+          npm --prefix client audit --omit=dev --audit-level=high
       - name: Build client
         working-directory: client
         run: npm ci && npm run build

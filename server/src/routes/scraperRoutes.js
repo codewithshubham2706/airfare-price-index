@@ -1,9 +1,10 @@
 /**
  * Scraper control endpoints — trigger, status.
- * POST /trigger is key-protected (x-api-key).
+ * POST /trigger and GET /status are key-protected (x-api-key, timing-safe compare).
  */
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import { timingSafeEqual, createHash } from 'node:crypto';
 import { env } from '../env.js';
 import { getStore } from '../store/index.js';
 import { runScrapeCycle } from '../scraper/orchestrator.js';
@@ -11,9 +12,21 @@ import { runScrapeCycle } from '../scraper/orchestrator.js';
 const router = Router();
 const triggerLimiter = rateLimit({ windowMs: 60_000, limit: 6, standardHeaders: 'draft-7', legacyHeaders: false });
 
-/** GET /api/v1/scraper/status */
-router.get('/status', async (_req, res, next) => {
+/** Constant-time API key check — prevents key-timing oracles on these endpoints. */
+export function keyMatches(presented) {
+  if (!presented) return false;
+  // Compare SHA-256 digests: fixed length, leaks nothing about the plaintext key.
+  const a = createHash('sha256').update(String(presented)).digest();
+  const b = createHash('sha256').update(env.scrapeApiKey).digest();
+  return timingSafeEqual(a, b);
+}
+
+/** GET /api/v1/scraper/status — key-protected: runs log reveal engine internals. */
+router.get('/status', async (req, res, next) => {
   try {
+    if (!keyMatches(req.get('x-api-key'))) {
+      return res.status(401).json({ error: 'Unauthorized — provide x-api-key header' });
+    }
     const store = getStore();
     const runs = await store.findRuns(10);
     const last = runs.find((r) => r.status === 'completed');
@@ -32,8 +45,7 @@ router.get('/status', async (_req, res, next) => {
 /** POST /api/v1/scraper/trigger */
 router.post('/trigger', triggerLimiter, async (req, res, next) => {
   try {
-    const key = req.get('x-api-key');
-    if (!key || key !== env.scrapeApiKey) {
+    if (!keyMatches(req.get('x-api-key'))) {
       return res.status(401).json({ error: 'Unauthorized — provide x-api-key header' });
     }
     const { force = false, mode, routes, windows } = req.body || {};

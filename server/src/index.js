@@ -4,6 +4,7 @@
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import helmet from 'helmet';
 import swaggerUi from 'swagger-ui-express';
 import rateLimit from 'express-rate-limit';
 import { env } from './env.js';
@@ -21,6 +22,19 @@ export function createApp() {
   // Behind Render/Cloudflare proxies: honor X-Forwarded-For so express-rate-limit
   // sees real client IPs instead of the proxy's (prevents rate-limit false merges).
   app.set('trust proxy', 1);
+  // Security headers; CSP allows the Swagger UI's inline scripts/styles.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.defaultsDirectives,
+          'script-src': ["'self'", "'unsafe-inline'"],
+          'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+          'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        },
+      },
+    })
+  );
   app.use(express.json({ limit: '256kb' }));
   app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
 

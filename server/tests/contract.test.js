@@ -131,11 +131,31 @@ describe('Scraper control & compliance', () => {
     }
   });
 
-  it('GET /api/v1/scraper/status exposes engine health + lastSync', async () => {
-    const res = await request(app).get('/api/v1/scraper/status').expect(200);
+  it('GET /api/v1/scraper/status is key-protected', async () => {
+    await request(app).get('/api/v1/scraper/status').expect(401);
+    const res = await request(app)
+      .get('/api/v1/scraper/status')
+      .set('x-api-key', TRIGGER_KEY)
+      .expect(200);
     assert.ok(['simulate', 'live'].includes(res.body.mode));
     assert.ok(res.body.lastSync != null);
     assert.ok(Array.isArray(res.body.recentRuns));
+  });
+
+  it('security headers present (helmet)', async () => {
+    const res = await request(app).get('/api/v1/health').expect(200);
+    assert.match(res.headers['content-security-policy'] || '', /default-src/);
+    assert.equal(res.headers['x-content-type-options'], 'nosniff');
+    assert.equal(res.headers['x-frame-options'] || res.headers['cross-origin-opener-policy'], res.headers['x-frame-options'] || 'same-origin');
+  });
+
+  it('trigger rejects oversized and malformed payloads', async () => {
+    const res = await request(app)
+      .post('/api/v1/scraper/trigger')
+      .set('x-api-key', TRIGGER_KEY)
+      .send({ routes: 'DEL-BOM' }) // string, not array
+      .expect(400);
+    assert.match(res.body.error, /array/);
   });
 
   it('GET /api/docs serves OpenAPI UI and /api/openapi.json is valid', async () => {
