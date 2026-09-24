@@ -18,11 +18,22 @@ import { startCron } from './cron.js';
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  // Behind Render/Cloudflare proxies: honor X-Forwarded-For so express-rate-limit
+  // sees real client IPs instead of the proxy's (prevents rate-limit false merges).
+  app.set('trust proxy', 1);
   app.use(express.json({ limit: '256kb' }));
   app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
 
-  const origins = String(env.corsOrigin).split(',').map((s) => s.trim()).filter(Boolean);
-  app.use(cors({ origin: origins.includes('*') ? true : origins }));
+  const allowedOrigins = String(env.corsOrigin).split(',').map((s) => s.trim()).filter(Boolean);
+  app.use(
+    cors({
+      origin(origin, cb) {
+        // Allow same-origin/no-origin (curl, health checks) and listed origins.
+        if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return cb(null, true);
+        return cb(new Error(`CORS: origin ${origin} not allowed`));
+      },
+    })
+  );
 
   // Global API rate limit — civic infrastructure stays gentle.
   app.use('/api/', rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }));
@@ -39,6 +50,19 @@ export function createApp() {
 
   app.get('/api/v1/health', (_req, res) => {
     res.json({ status: 'ok', service: 'apix-api', version: '1.0.0', time: new Date().toISOString() });
+  });
+
+  // Deployment introspection — shows what CORS would allow; set CORS_ORIGIN
+  // to your https://<project>.pages.dev URL (comma-separate for previews).
+  app.get('/api/v1/meta', (_req, res) => {
+    res.json({
+      service: 'apix-api',
+      env: env.nodeEnv,
+      allowedOrigins,
+      store: getStore().kind,
+      scraper: { mode: env.scrapeMode, offPeakOnly: env.offPeakOnly, cron: env.scrapeCron },
+      time: new Date().toISOString(),
+    });
   });
 
   // JSON 404 for unknown API paths (HTML 404 elsewhere)

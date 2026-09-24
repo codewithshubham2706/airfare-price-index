@@ -1,0 +1,36 @@
+# Render Blueprint — deploys the APIx API with one click
+# (Render → New → Blueprint → pick this repo, root directory = repo root)
+services:
+  - type: web
+    name: apix-api
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    plan: free
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      # Render generates a strong random key at create time.
+      # Copy it from Render → Environment → paste into the dashboard's "API key" dialog.
+      - key: SCRAPE_API_KEY
+        generateValue: true
+      - key: NODE_ENV
+        value: production
+      - key: SCRAPE_MODE
+        value: simulate # switch to live later (requires ToS review + playwright chromium)
+      # Compliance: scheduled runs only inside 02:00–04:00 IST
+      - key: SCRAPE_OFF_PEAK_ONLY
+        value: "true"
+      - key: SCRAPE_MIN_DELAY_MS
+        value: "5000"
+      - key: SCRAPE_MAX_DELAY_MS
+        value: "15000"
+      # Set after the Pages deployment exists, e.g. https://apix.pages.dev
+      # (leave as-is initially; tighten once you know the pages.dev URL)
+      - key: CORS_ORIGIN
+        sync: false
+      # Optional: paste a MongoDB Atlas M0 SRV string for persistence
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: apix
