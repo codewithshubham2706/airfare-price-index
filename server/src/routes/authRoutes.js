@@ -9,7 +9,7 @@ import { createUser, authenticate, publicUser, signToken, validateRegistration }
 const router = Router();
 const authLimiter = rateLimit({
   windowMs: 10 * 60_000,
-  limit: 20,
+  limit: 50, // forgiving of typos; still throttles credential stuffing
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Too many attempts — try again in 10 minutes' },
