@@ -40,6 +40,25 @@ router.post('/login', authLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+
+    // Prototype mode (development only): ANY email + ANY password logs in as admin.
+    if (env.openAuth) {
+      const store = getStore();
+      let user = await store.findUserByEmail(email);
+      if (!user) {
+        await store.insertUser({
+          email: String(email).toLowerCase().trim(),
+          name: String(email).split('@')[0],
+          role: 'admin',
+          passwordHash: 'open-auth',
+          createdAt: new Date(),
+        });
+        user = await store.findUserByEmail(email);
+        console.log(`[auth:open] auto-created admin for ${user.email}`);
+      }
+      return res.json({ token: signToken({ sub: user.email, name: user.name, role: user.role }), user: publicUser(user) });
+    }
+
     const user = await authenticate(email, password);
     if (!user) return res.status(401).json({ error: 'Invalid email or password' });
     res.json({ token: signToken({ sub: user.email, name: user.name, role: user.role }), user: publicUser(user) });

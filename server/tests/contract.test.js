@@ -38,9 +38,21 @@ before(async () => {
 after(async () => { await closeStore(); });
 
 describe('Auth contract', () => {
-  it('rejects bad credentials and enforces rate limits', async () => {
-    const bad = await request(app).post('/api/v1/auth/login').send({ email: 'admin@apix.gov.in', password: 'wrong' });
-    assert.equal(bad.status, 401);
+  it('open-auth (prototype mode): any credentials sign in as admin', async () => {
+    const any = await request(app).post('/api/v1/auth/login').send({ email: 'whoever@random.test', password: 'literally-anything' });
+    assert.equal(any.status, 200);
+    assert.equal(any.body.user.role, 'admin');
+  });
+
+  it('open-auth can be disabled via APIX_OPEN_AUTH=false', async () => {
+    process.env.APIX_OPEN_AUTH = 'false';
+    const mod = await import('../src/env.js');
+    try {
+      assert.equal(mod.env.openAuth, false, 'openAuth must be off when explicitly disabled');
+    } finally {
+      delete process.env.APIX_OPEN_AUTH;
+      await import('../src/env.js');
+    }
   });
 
   it('issues verifiable JWTs with correct role claims', () => {

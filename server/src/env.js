@@ -19,6 +19,10 @@ export const env = {
   scrapeCron: process.env.SCRAPE_CRON || '0 45 20 * * *', // 02:45 IST daily (UTC cron)
 
   baselineDays: Number(process.env.BASELINE_DAYS || 7),
+
+  // Prototype convenience: in development, login accepts ANY credentials and
+  // auto-registers unknown emails as admins. Never active outside development.
+  openAuth: (process.env.NODE_ENV || 'development') !== 'production' && process.env.APIX_OPEN_AUTH !== 'false',
 };
 
 // Startup guard: the demo default is fine locally, never in production.
