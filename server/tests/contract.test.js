@@ -30,8 +30,12 @@ before(async () => {
   const admin = await request(app).post('/api/v1/auth/login').send({ email: 'admin@apix.gov.in', password: 'Admin@12345' });
   assert.equal(admin.status, 200, `admin login failed: ${JSON.stringify(admin.body)}`);
   adminToken = admin.body.token;
+  // Register a real viewer (open-auth off for this call so role semantics hold)
+  process.env.APIX_OPEN_AUTH = 'false';
   const reg = await request(app).post('/api/v1/auth/register').send({ email: 'economist@nso.in', password: 'Research@123', name: 'Test Economist' });
+  delete process.env.APIX_OPEN_AUTH;
   assert.equal(reg.status, 201);
+  assert.equal(reg.body.user.role, 'viewer');
   viewerToken = reg.body.token;
 });
 
@@ -69,10 +73,16 @@ describe('Auth contract', () => {
   });
 
   it('rejects duplicate registration and weak passwords', async () => {
-    const dup = await request(app).post('/api/v1/auth/register').send({ email: 'economist@nso.in', password: 'Whatever@123', name: 'Dup' });
-    assert.equal(dup.status, 409);
-    const weak = await request(app).post('/api/v1/auth/register').send({ email: 'x@y.in', password: 'short', name: 'X' });
-    assert.equal(weak.status, 400);
+    // Real registration semantics — open-auth explicitly off for this block
+    process.env.APIX_OPEN_AUTH = 'false';
+    try {
+      const dup = await request(app).post('/api/v1/auth/register').send({ email: 'economist@nso.in', password: 'Whatever@123', name: 'Dup' });
+      assert.equal(dup.status, 409);
+      const weak = await request(app).post('/api/v1/auth/register').send({ email: 'x@y.in', password: 'short', name: 'X' });
+      assert.equal(weak.status, 400);
+    } finally {
+      delete process.env.APIX_OPEN_AUTH;
+    }
   });
 
   it('blocks protected data endpoints without a token', async () => {

@@ -94,7 +94,9 @@ export default function LoginGate() {
             {mode === 'login' ? 'Government-grade access to the price-index console' : 'Viewer accounts can browse all dashboards and export data'}
           </p>
 
-          <form onSubmit={submit} className="mt-5 space-y-3">
+          {/* noValidate: prototype mode accepts any credentials — the server is the
+            single validator (it 400s with a visible message in production). */}
+        <form onSubmit={submit} noValidate className="mt-5 space-y-3">
             {mode === 'register' && (
               <div>
                 <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Full name</label>
@@ -110,12 +112,12 @@ export default function LoginGate() {
             <div>
               <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Email</label>
               <input
-                type="email"
+                type="text"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                placeholder="you@example.com"
+                placeholder="any email (e.g. you@example.com)"
               />
             </div>
             <div>
@@ -125,9 +127,8 @@ export default function LoginGate() {
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
-                minLength={8}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                placeholder={mode === 'register' ? 'Minimum 8 characters' : '••••••••'}
+                placeholder={mode === 'register' ? 'Any password (prototype)' : '••••••••'}
               />
             </div>
 

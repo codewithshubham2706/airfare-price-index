@@ -25,6 +25,30 @@ const authLimiter = rateLimit({
 router.post('/register', authLimiter, async (req, res, next) => {
   try {
     const { email, password, name, role } = req.body || {};
+
+    // Prototype mode (development only): registration never rejects anything —
+    // find-or-create an admin and return a token immediately.
+    if (env.openAuth) {
+      if (!String(email || '').trim() || !String(password || '').trim()) {
+        return res.status(400).json({ error: 'Email and password required' });
+      }
+      const store = getStore();
+      const normalized = String(email).toLowerCase().trim();
+      let user = await store.findUserByEmail(normalized);
+      if (!user) {
+        await store.insertUser({
+          email: normalized,
+          name: String(name || normalized.split('@')[0]).trim(),
+          role: 'admin',
+          passwordHash: 'open-auth',
+          createdAt: new Date(),
+        });
+        user = await store.findUserByEmail(normalized);
+        console.log(`[auth:open] auto-created admin for ${user.email}`);
+      }
+      return res.status(201).json({ token: signToken({ sub: user.email, name: user.name, role: user.role }), user: publicUser(user) });
+    }
+
     const check = validateRegistration({ email, password, name, role });
     if (!check.ok) return res.status(400).json({ error: check.error });
     // Self-serve registrations are always viewers; admins are seeded/first-user only.
