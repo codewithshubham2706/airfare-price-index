@@ -6,6 +6,16 @@
 
 **Repo:** [github.com/codewithshubham2706/airfare-price-index](https://github.com/codewithshubham2706/airfare-price-index)
 
+## 🚀 One-click deploy
+
+| Piece | Button | Result |
+|---|---|---|
+| **API** (Express + scraper engine) | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/codewithshubham2706/airfare-price-index) | Reads `render.yaml` → `https://apix-api-xxxx.onrender.com` |
+| **Dashboard** (this website) | [![Deploy to Cloudflare](https://img.shields.io/badge/Deploy-Cloudflare%20Pages-F6821F?logo=cloudflare&logoColor=white)](https://dash.cloudflare.com/?to=/:account/workers-and-pages/create/pages) | Connect repo → root `client` → `https://apix.pages.dev` |
+
+After deploying, set the Pages env var `VITE_API_BASE=https://apix-api-xxxx.onrender.com/api/v1`
+and the API's `CORS_ORIGIN=https://apix.pages.dev`.
+
 Enterprise-grade production prototype of an automated **domestic airfare price index** for the
 National Statistical Office (MoSPI) and the Reserve Bank of India (RBI).
 
