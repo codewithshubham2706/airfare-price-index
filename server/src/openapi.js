@@ -22,6 +22,7 @@ export const openapiSpec = {
   components: {
     securitySchemes: {
       ApiKeyAuth: { type: 'apiKey', in: 'header', name: 'x-api-key' },
+      BearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
     },
   },
   paths: {
@@ -123,6 +124,40 @@ export const openapiSpec = {
     },
     '/api/v1/health': {
       get: { tags: ['scraper'], summary: 'Liveness probe', responses: { 200: { description: 'ok' } } },
+    },
+    '/api/v1/auth/register': {
+      post: {
+        tags: ['auth'],
+        summary: 'Create a viewer account (first user becomes admin)',
+        requestBody: {
+          content: { 'application/json': { schema: {
+            type: 'object', required: ['email', 'password', 'name'],
+            properties: { email: { type: 'string' }, password: { type: 'string', minLength: 8 }, name: { type: 'string' } },
+          } } },
+        },
+        responses: { 201: { description: 'JWT + profile' }, 400: { description: 'Validation error' }, 409: { description: 'Email exists' } },
+      },
+    },
+    '/api/v1/auth/login': {
+      post: {
+        tags: ['auth'],
+        summary: 'Exchange credentials for a 12h JWT',
+        requestBody: {
+          content: { 'application/json': { schema: {
+            type: 'object', required: ['email', 'password'],
+            properties: { email: { type: 'string' }, password: { type: 'string' } },
+          } } },
+        },
+        responses: { 200: { description: 'JWT + profile' }, 401: { description: 'Invalid credentials' } },
+      },
+    },
+    '/api/v1/auth/me': {
+      get: {
+        tags: ['auth'],
+        summary: 'Current session profile',
+        security: [{ BearerAuth: [] }],
+        responses: { 200: { description: 'Profile' }, 401: { description: 'No/expired session' } },
+      },
     },
   },
 };

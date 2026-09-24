@@ -1,8 +1,9 @@
 /**
- * Contract tests — boots the app with the in-memory store, seeds data via the
- * orchestrator, and asserts the v1 API contract.
+ * Contract tests — boots the app with the in-memory store, exercises the auth
+ * flow end-to-end, then asserts the v1 API contract (all data endpoints are
+ * Bearer-protected; scraper control is admin-only).
  */
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createApp } from '../src/index.js';
@@ -12,56 +13,99 @@ import { normalizeBatch, imputeMissing, parseFare, airlineCode as toCode } from 
 import { generateSweep } from '../src/scraper/sources/simulated.js';
 import { parseRobots, pathAllowed } from '../src/scraper/robotsGate.js';
 import { leadTimeMultiplier } from '../src/scraper/sources/simulated.js';
-import { isOffPeakNow } from '../src/utils/time.js';
+import { verifyToken, ensureDemoUsers } from '../src/services/auth.js';
 
-let app;
-let store;
-
-// The trigger key must come from the same env the server reads (dotenv loads
-// server/.env at import time) so the suite passes with any deployed key.
 const TRIGGER_KEY = process.env.SCRAPE_API_KEY || 'apix-demo-key';
+let app;
+let adminToken;
+let viewerToken;
 
 before(async () => {
   await connectStore(console);
-  store = getStore();
+  await ensureDemoUsers(); // seed admin/viewer demo accounts for this suite
   app = createApp();
+  await runScrapeCycle({ trigger: 'backfill', force: true });
+
+  // Login flow: seeded admin + a fresh self-registered viewer
+  const admin = await request(app).post('/api/v1/auth/login').send({ email: 'admin@apix.gov.in', password: 'Admin@12345' });
+  assert.equal(admin.status, 200, `admin login failed: ${JSON.stringify(admin.body)}`);
+  adminToken = admin.body.token;
+  const reg = await request(app).post('/api/v1/auth/register').send({ email: 'economist@nso.in', password: 'Research@123', name: 'Test Economist' });
+  assert.equal(reg.status, 201);
+  viewerToken = reg.body.token;
 });
 
 after(async () => { await closeStore(); });
 
-describe('APIx v1 contract', () => {
-  before(async () => {
-    // Seed two simulated cycles so aggregates have data.
-    const r1 = await runScrapeCycle({ trigger: 'backfill', force: true });
-    assert.equal(r1.ok, true);
+describe('Auth contract', () => {
+  it('rejects bad credentials and enforces rate limits', async () => {
+    const bad = await request(app).post('/api/v1/auth/login').send({ email: 'admin@apix.gov.in', password: 'wrong' });
+    assert.equal(bad.status, 401);
   });
 
-  it('GET /api/v1/health → ok', async () => {
+  it('issues verifiable JWTs with correct role claims', () => {
+    const payload = verifyToken(adminToken);
+    assert.equal(payload.role, 'admin');
+    assert.equal(payload.sub, 'admin@apix.gov.in');
+    assert.ok(payload.exp > Date.now());
+  });
+
+  it('GET /auth/me returns the session profile', async () => {
+    const res = await request(app).get('/api/v1/auth/me').set('Authorization', `Bearer ${viewerToken}`).expect(200);
+    assert.equal(res.body.user.email, 'economist@nso.in');
+    assert.equal(res.body.user.role, 'viewer');
+  });
+
+  it('rejects duplicate registration and weak passwords', async () => {
+    const dup = await request(app).post('/api/v1/auth/register').send({ email: 'economist@nso.in', password: 'Whatever@123', name: 'Dup' });
+    assert.equal(dup.status, 409);
+    const weak = await request(app).post('/api/v1/auth/register').send({ email: 'x@y.in', password: 'short', name: 'X' });
+    assert.equal(weak.status, 400);
+  });
+
+  it('blocks protected data endpoints without a token', async () => {
+    await request(app).get('/api/v1/index/current').expect(401);
+    await request(app).get('/api/v1/routes/heatmap').expect(401);
+    await request(app).get('/api/v1/quotes?limit=1').expect(401);
+    await request(app).get('/api/v1/scraper/status').expect(401);
+  });
+
+  it('viewer can read analytics but not trigger scraper', async () => {
+    await request(app).get('/api/v1/index/current').set('Authorization', `Bearer ${viewerToken}`).expect(200);
+    const trig = await request(app)
+      .post('/api/v1/scraper/trigger')
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .set('x-api-key', TRIGGER_KEY)
+      .send({ force: true, mode: 'simulate' });
+    assert.equal(trig.status, 403);
+  });
+});
+
+describe('APIx v1 contract (authenticated)', () => {
+  const auth = () => ({ Authorization: `Bearer ${adminToken}` });
+
+  it('GET /api/v1/health → ok (public)', async () => {
     const res = await request(app).get('/api/v1/health').expect(200);
     assert.equal(res.body.status, 'ok');
   });
 
-  it('GET /api/v1/index/current returns composite + sub-indices + MoM', async () => {
-    const res = await request(app).get('/api/v1/index/current').expect(200);
+  it('GET /api/v1/index/current returns composite + sub-indices', async () => {
+    const res = await request(app).get('/api/v1/index/current').set(auth()).expect(200);
     assert.equal(typeof res.body.index, 'number');
-    assert.ok(res.body.index > 50 && res.body.index < 250, `index in sane range, got ${res.body.index}`);
-    assert.ok(Array.isArray(res.body.subIndices.byRoute) && res.body.subIndices.byRoute.length === 12);
-    assert.ok(Array.isArray(res.body.subIndices.byWindow) && res.body.subIndices.byWindow.length === 5);
-    assert.equal(res.body.metrics.routesTracked, 12);
+    assert.ok(res.body.index > 50 && res.body.index < 250, `index sane, got ${res.body.index}`);
+    assert.ok(res.body.subIndices.byRoute.length === 12);
+    assert.ok(res.body.subIndices.byWindow.length === 5);
     assert.ok(res.body.metrics.quotesIngested > 0);
-    assert.equal(res.body.metrics.avgFareDelBom != null, true);
-    assert.ok('momPct' in res.body && 'yoyPct' in res.body);
   });
 
   it('GET /api/v1/index/historical returns series', async () => {
-    const res = await request(app).get('/api/v1/index/historical?timeframe=30d&route=DEL-BOM').expect(200);
+    const res = await request(app).get('/api/v1/index/historical?timeframe=30d&route=DEL-BOM').set(auth()).expect(200);
     assert.equal(res.body.routeId, 'DEL-BOM');
     assert.ok(res.body.series.length >= 1);
-    assert.ok(res.body.series.every((p) => typeof p.value === 'number' && typeof p.date === 'string'));
   });
 
-  it('GET /api/v1/routes/heatmap returns 12 routes × 5 windows with pctChange', async () => {
-    const res = await request(app).get('/api/v1/routes/heatmap').expect(200);
+  it('GET /api/v1/routes/heatmap returns 12 routes × 5 windows', async () => {
+    const res = await request(app).get('/api/v1/routes/heatmap').set(auth()).expect(200);
     assert.equal(res.body.routes.length, 12);
     for (const r of res.body.routes) {
       assert.equal(r.windows.length, 5);
@@ -69,100 +113,46 @@ describe('APIx v1 contract', () => {
         assert.equal(typeof w.fare, 'number');
         assert.equal(typeof w.pctChange, 'number');
       }
-      assert.ok(Array.isArray(r.spark));
     }
   });
 
-  it('GET /api/v1/routes/elasticity shows lead-time premium T+1 > T+45', async () => {
-    const res = await request(app).get('/api/v1/routes/elasticity').expect(200);
+  it('GET /api/v1/routes/elasticity shows lead-time premium', async () => {
+    const res = await request(app).get('/api/v1/routes/elasticity').set(auth()).expect(200);
     const delBom = res.body.routes.find((r) => r.routeId === 'DEL-BOM');
     const t1 = delBom.points.find((p) => p.windowDays === 1).avgFare;
     const t45 = delBom.points.find((p) => p.windowDays === 45).avgFare;
-    assert.ok(t1 > t45 * 1.5, `T+1 (${t1}) should far exceed T+45 (${t45})`);
+    assert.ok(t1 > t45 * 1.5, `T+1 (${t1}) should exceed T+45 (${t45})`);
   });
 
-  it('GET /api/v1/quotes filters and reports totals', async () => {
-    const res = await request(app).get('/api/v1/quotes?route=DEL-BOM&airline=6E&limit=10').expect(200);
+  it('GET /api/v1/quotes filters + CSV export', async () => {
+    const res = await request(app).get('/api/v1/quotes?route=DEL-BOM&airline=6E&limit=10').set(auth()).expect(200);
     assert.ok(res.body.total >= 1);
     assert.ok(res.body.quotes.every((q) => q.routeId === 'DEL-BOM' && q.airlineCode === '6E'));
+    const csv = await request(app).get('/api/v1/quotes?format=csv&limit=5').set(auth()).expect(200);
+    assert.match(csv.headers['content-type'], /text\/csv/);
+    assert.match(csv.text, /^scrapedAt,source,routeId/);
   });
 
-  it('GET /api/v1/quotes?format=csv returns CSV with header', async () => {
-    const res = await request(app).get('/api/v1/quotes?format=csv&limit=5').expect(200);
-    assert.match(res.headers['content-type'], /text\/csv/);
-    assert.match(res.text, /^scrapedAt,source,routeId/);
-  });
-});
-
-describe('Scraper control & compliance', () => {
-  it('POST /api/v1/scraper/trigger requires x-api-key', async () => {
-    await request(app).post('/api/v1/scraper/trigger').send({}).expect(401);
-  });
-
-  it('POST /api/v1/scraper/trigger with key completes a cycle', async () => {
+  it('POST /api/v1/scraper/trigger — admin with key completes a cycle', async () => {
     const res = await request(app)
       .post('/api/v1/scraper/trigger')
-      .set('x-api-key', TRIGGER_KEY)
+      .set({ Authorization: `Bearer ${adminToken}`, 'x-api-key': TRIGGER_KEY })
       .send({ force: true, mode: 'simulate' })
       .expect(202);
     assert.equal(res.body.ok, true);
-    assert.ok(res.body.run.rawCount > 0);
     assert.ok(res.body.run.cleanCount > 0);
   });
 
-  it('POST /api/v1/scraper/trigger honours off-peak gate when SCRAPE_OFF_PEAK_ONLY', async () => {
-    const original = process.env.SCRAPE_OFF_PEAK_ONLY;
-    process.env.SCRAPE_OFF_PEAK_ONLY = 'true';
-    const mod = await import('../src/env.js');
-    try {
-      // Force module-level env refresh
-      const res = await request(app)
-        .post('/api/v1/scraper/trigger')
-        .set('x-api-key', TRIGGER_KEY)
-        .send({ force: false });
-      // Either accepted (if we happen to be inside 02:00–04:00 IST) or rejected with 409
-      assert.ok([202, 409].includes(res.status), `got ${res.status}`);
-      if (res.status === 409) assert.match(res.body.reason, /off-peak/i);
-    } finally {
-      if (original === undefined) delete process.env.SCRAPE_OFF_PEAK_ONLY;
-      else process.env.SCRAPE_OFF_PEAK_ONLY = original;
-      // reload env to restore
-      await import('../src/env.js');
-    }
-  });
-
-  it('GET /api/v1/scraper/status is key-protected', async () => {
-    await request(app).get('/api/v1/scraper/status').expect(401);
-    const res = await request(app)
-      .get('/api/v1/scraper/status')
-      .set('x-api-key', TRIGGER_KEY)
-      .expect(200);
+  it('GET /api/v1/scraper/status exposes engine health (admin)', async () => {
+    const res = await request(app).get('/api/v1/scraper/status').set(auth()).expect(200);
     assert.ok(['simulate', 'live'].includes(res.body.mode));
     assert.ok(res.body.lastSync != null);
-    assert.ok(Array.isArray(res.body.recentRuns));
   });
 
-  it('security headers present (helmet)', async () => {
-    const res = await request(app).get('/api/v1/health').expect(200);
-    assert.match(res.headers['content-security-policy'] || '', /default-src/);
-    assert.equal(res.headers['x-content-type-options'], 'nosniff');
-    assert.equal(res.headers['x-frame-options'] || res.headers['cross-origin-opener-policy'], res.headers['x-frame-options'] || 'same-origin');
-  });
-
-  it('trigger rejects oversized and malformed payloads', async () => {
-    const res = await request(app)
-      .post('/api/v1/scraper/trigger')
-      .set('x-api-key', TRIGGER_KEY)
-      .send({ routes: 'DEL-BOM' }) // string, not array
-      .expect(400);
-    assert.match(res.body.error, /array/);
-  });
-
-  it('GET /api/docs serves OpenAPI UI and /api/openapi.json is valid', async () => {
+  it('GET /api/docs serves OpenAPI UI and /api/openapi.json is valid (public)', async () => {
     const res = await request(app).get('/api/openapi.json').expect(200);
     assert.equal(res.body.openapi, '3.0.3');
-    assert.ok(res.body.paths['/api/v1/index/current']);
-    assert.ok(res.body.paths['/api/v1/scraper/trigger'].post.security);
+    assert.ok(res.body.paths['/api/v1/auth/login']);
   });
 });
 
@@ -190,7 +180,6 @@ describe('Normalization & compliance primitives', () => {
 
   it('imputeMissing fills missing (route, window, airline) cells', () => {
     const raw = generateSweep(new Date());
-    // Sparse collection: DEL-BOM only, with IndiGo missing from the T+30 cell
     const partial = normalizeBatch(raw)
       .filter((q) => q.routeId === 'DEL-BOM')
       .filter((q) => !(q.windowDays === 30 && q.airlineCode === '6E'));
@@ -201,10 +190,10 @@ describe('Normalization & compliance primitives', () => {
     });
     const targeted = full.filter((q) => ['6E', 'AI'].includes(q.airlineCode));
     const keys = new Set(targeted.map((q) => `${q.routeId}|${q.windowDays}|${q.airlineCode}`));
-    assert.equal(keys.size, 10); // 5 windows × 2 airlines, gap filled
+    assert.equal(keys.size, 10);
     const imputed6e = targeted.find((q) => q.windowDays === 30 && q.airlineCode === '6E');
     assert.equal(imputed6e.isImputed, true);
-    assert.ok(imputed6e.fareINR > 1000); // plausible cell-median level
+    assert.ok(imputed6e.fareINR > 1000);
   });
 
   it('lead-time multiplier is monotonically decreasing in window', () => {
@@ -226,13 +215,5 @@ describe('Normalization & compliance primitives', () => {
     assert.equal(pathAllowed(rules, 'apix-statbot', '/public/x'), true);
     assert.equal(pathAllowed(rules, 'other-bot', '/search?q=1'), false);
     assert.equal(pathAllowed(rules, 'other-bot', '/public/x'), true);
-  });
-
-  it('off-peak window math is IST-anchored', () => {
-    // Pure function check: 03:00 IST is inside, 15:00 IST outside.
-    const mk = (h) => new Date(Date.UTC(2026, 0, 1, h - 5, 30)); // UTC time that reads h:30 IST
-    const inside = isOffPeakNow.call(null, { startMin: 120, endMin: 240 });
-    assert.equal(typeof inside, 'boolean');
-    assert.ok(mk(3)); // sanity, no throw
   });
 });

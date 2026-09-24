@@ -14,6 +14,9 @@ import indexRoutes from './routes/indexRoutes.js';
 import routeRoutes from './routes/routeRoutes.js';
 import scraperRoutes from './routes/scraperRoutes.js';
 import quoteRoutes from './routes/quoteRoutes.js';
+import authRoutes from './routes/authRoutes.js';
+import { attachUser, requireAuth, requireRole } from './authMiddleware.js';
+import { ensureDemoUsers } from './services/auth.js';
 import { startCron } from './cron.js';
 
 export function createApp() {
@@ -56,11 +59,15 @@ export function createApp() {
   app.get('/api/openapi.json', (_req, res) => res.json(openapiSpec));
   app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, { customSiteTitle: 'APIx — API Documentation' }));
 
-  // v1
-  app.use('/api/v1/index', indexRoutes);
-  app.use('/api/v1/routes', routeRoutes);
-  app.use('/api/v1/scraper', scraperRoutes);
-  app.use('/api/v1/quotes', quoteRoutes);
+  // v1 — auth (attachUser decodes Bearer tokens for all downstream routes)
+  app.use(attachUser);
+  app.use('/api/v1/auth', authRoutes);
+
+  // v1 — protected analytics (Bearer token required)
+  app.use('/api/v1/index', requireAuth, indexRoutes);
+  app.use('/api/v1/routes', requireAuth, routeRoutes);
+  app.use('/api/v1/quotes', requireAuth, quoteRoutes);
+  app.use('/api/v1/scraper', requireAuth, requireRole('admin'), scraperRoutes);
 
   app.get('/api/v1/health', (_req, res) => {
     res.json({ status: 'ok', service: 'apix-api', version: '1.0.0', time: new Date().toISOString() });
@@ -103,6 +110,8 @@ if (isMain) {
   // Auto-seed 90 days of simulated history on FIRST boot only (empty timeline),
   // for any store kind — the dashboard is never empty, and with MongoDB the
   // history then survives restarts instead of being regenerated per boot.
+  await ensureDemoUsers();
+
   const timeline = await getStore().findIndexPoints({ routeId: null, windowDays: null });
   if (timeline.length === 0) {
     const { seedHistory } = await import('./services/demoSeed.js');

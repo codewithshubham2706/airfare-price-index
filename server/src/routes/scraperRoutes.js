@@ -21,12 +21,9 @@ export function keyMatches(presented) {
   return timingSafeEqual(a, b);
 }
 
-/** GET /api/v1/scraper/status — key-protected: runs log reveal engine internals. */
-router.get('/status', async (req, res, next) => {
+/** GET /api/v1/scraper/status — admin-JWT-protected at mount; runs log is sensitive. */
+router.get('/status', async (_req, res, next) => {
   try {
-    if (!keyMatches(req.get('x-api-key'))) {
-      return res.status(401).json({ error: 'Unauthorized — provide x-api-key header' });
-    }
     const store = getStore();
     const runs = await store.findRuns(10);
     const last = runs.find((r) => r.status === 'completed');

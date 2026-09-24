@@ -9,7 +9,9 @@ import HeatmapTab from './components/HeatmapTab.jsx';
 import ElasticityTab from './components/ElasticityTab.jsx';
 import DataExplorer from './components/DataExplorer.jsx';
 import ScraperKeyModal from './components/ScraperKeyModal.jsx';
-import { KeyRound } from 'lucide-react';
+import LoginGate from './components/LoginGate.jsx';
+import { AuthProvider, useAuth } from './services/auth.jsx';
+import { KeyRound, Loader2 } from 'lucide-react';
 import Footer from './components/Footer.jsx';
 
 const TABS = [
@@ -50,6 +52,7 @@ function ScraperControls({ status, onRun, running, notice, onManageKey }) {
 }
 
 function Dashboard() {
+  const { user, token, login, register, logout } = useAuth();
   const [tab, setTab] = useState('trend');
   const [timeframe, setTimeframe] = useState('30d');
   const [current, setCurrent] = useState(null);
@@ -66,21 +69,21 @@ function Dashboard() {
 
   const loadCore = useCallback(async () => {
     const [cur, hist, hm, ela, rts] = await Promise.allSettled([
-      api.currentIndex(),
-      api.historical({ timeframe }),
-      api.heatmap(),
-      api.elasticity(),
-      api.routes(),
+      api.currentIndex(token),
+      api.historical({ timeframe }, token),
+      api.heatmap(token),
+      api.elasticity(token),
+      api.routes(token),
     ]);
     if (cur.status === 'fulfilled') setCurrent(cur.value);
-    else setError('API unreachable — is the server running on :8787?');
+    else setError('Data unavailable — API unreachable or session expired. Try signing in again.');
     if (hist.status === 'fulfilled') setHistorical(hist.value);
     if (hm.status === 'fulfilled') setHeatmap(hm.value);
     if (ela.status === 'fulfilled') setElasticity(ela.value);
     if (rts.status === 'fulfilled') setRoutes(rts.value.routes);
   }, [timeframe]);
 
-  const loadStatus = useCallback(() => api.scraperStatus().then(setStatus).catch(() => {}), []);
+  const loadStatus = useCallback(() => api.scraperStatus(token).then(setStatus).catch(() => {}), [token]);
 
   useEffect(() => { loadCore(); }, [loadCore]);
   useEffect(() => { loadStatus(); }, [loadStatus]);
@@ -93,7 +96,7 @@ function Dashboard() {
     setRunning(true);
     setNotice(null);
     try {
-      const res = await api.trigger({ force: true, mode: 'simulate' }, apiKey);
+      const res = await api.trigger({ force: true, mode: 'simulate' }, apiKey, token);
       if (res.ok) {
         setNotice({ ok: true, msg: `+${res.body.run?.cleanCount ?? 0} quotes ingested` });
         await Promise.all([loadCore(), loadStatus()]);
@@ -121,7 +124,7 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen">
-      <Header status={status} />
+      <Header status={status} user={user} onLogout={logout} />
       <main className="mx-auto max-w-7xl space-y-4 px-4 py-6 sm:px-6">
         {error && (
           <div className="card flex items-center gap-3 border-red-200 p-4 text-sm text-red-600 dark:border-red-900/60 dark:text-red-400">
@@ -134,6 +137,7 @@ function Dashboard() {
         )}
 
         <MetricCards data={current} />
+        {!user && <p className="text-xs text-slate-400">Signed out — data below is from the last loaded session.</p>}
         <ScraperControls status={status} onRun={runCycle} running={running} notice={notice} onManageKey={() => setKeyModalOpen(true)} />
         <ScraperKeyModal open={keyModalOpen} onClose={() => setKeyModalOpen(false)} onSave={saveKey} currentKey={apiKey} />
 
@@ -164,7 +168,7 @@ function Dashboard() {
           )}
           {tab === 'heatmap' && <HeatmapTab heatmap={heatmap} />}
           {tab === 'elasticity' && <ElasticityTab elasticity={elasticity} />}
-          {tab === 'explorer' && <DataExplorer routes={routes} />}
+          {tab === 'explorer' && <DataExplorer routes={routes} token={token} />}
         </div>
       </main>
       <Footer />
@@ -172,10 +176,25 @@ function Dashboard() {
   );
 }
 
+function AuthenticatedApp() {
+  const { user, booting, login, register } = useAuth();
+  if (booting) {
+    return (
+      <div className="flex min-h-screen items-center justify-center gap-3 text-slate-400">
+        <Loader2 className="h-5 w-5 animate-spin" /> Restoring session…
+      </div>
+    );
+  }
+  if (!user) return <LoginGate onLogin={login} onRegister={register} />;
+  return <Dashboard />;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
-      <Dashboard />
+      <AuthProvider>
+        <AuthenticatedApp />
+      </AuthProvider>
     </ThemeProvider>
   );
 }

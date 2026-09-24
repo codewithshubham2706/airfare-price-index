@@ -18,6 +18,7 @@ class MemoryStore {
     this.quotesClean = [];
     this.indexTimeline = [];
     this.runs = [];
+    this.users = [];
   }
 
   async connect() { return this; }
@@ -88,6 +89,16 @@ class MemoryStore {
   async countQuotesRaw() { return this.quotesRaw.length; }
   async countQuotesClean() { return this.quotesClean.length; }
 
+  // ── Users ────────────────────────────────────────────────────
+  async findUserByEmail(email) {
+    return this.users.find((u) => u.email === String(email).toLowerCase()) || null;
+  }
+  async insertUser(user) {
+    this.users.push({ ...user });
+    return { email: user.email, name: user.name, role: user.role, createdAt: user.createdAt };
+  }
+  async countUsers() { return this.users.length; }
+
   async trimIndexTimeline(keepDates) {
     const set = new Set(keepDates.map((d) => d.getTime()));
     this.indexTimeline = this.indexTimeline.filter((p) => set.has(p.date.getTime()) || p.routeId || p.windowDays);
@@ -107,6 +118,7 @@ class MongoStore {
     await this.db.collection('quotes_clean').createIndex({ routeId: 1, windowDays: 1, airlineCode: 1, scrapedAt: -1 });
     await this.db.collection('index_timeline').createIndex({ routeId: 1, windowDays: 1, date: 1 }, { unique: true });
     await this.db.collection('runs').createIndex({ startedAt: -1 });
+    await this.db.collection('users').createIndex({ email: 1 }, { unique: true });
     return this;
   }
   async close() { await this.client.close(); }
@@ -173,6 +185,17 @@ class MongoStore {
   }
   async countQuotesRaw() { return this.db.collection('quotes_raw').countDocuments({}); }
   async countQuotesClean() { return this.db.collection('quotes_clean').countDocuments({}); }
+
+  // ── Users ────────────────────────────────────────────────────
+  async findUserByEmail(email) {
+    return this.db.collection('users').findOne({ email: String(email).toLowerCase() });
+  }
+  async insertUser(user) {
+    const { passwordHash, ...pub } = user;
+    await this.db.collection('users').insertOne({ ...user });
+    return pub;
+  }
+  async countUsers() { return this.db.collection('users').countDocuments({}); }
 }
 
 let storeInstance = null;

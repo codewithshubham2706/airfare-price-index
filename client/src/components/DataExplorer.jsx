@@ -5,7 +5,7 @@ import { WINDOWS } from '../services/format.js';
 
 const PAGE_SIZE = 50;
 
-export default function DataExplorer({ routes }) {
+export default function DataExplorer({ routes, token }) {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -20,7 +20,7 @@ export default function DataExplorer({ routes }) {
   useEffect(() => {
     let live = true;
     setLoading(true);
-    api.quotes(query)
+    api.quotes(query, token)
       .then((d) => {
         if (!live) return;
         setRows(d.quotes || []);
@@ -36,7 +36,26 @@ export default function DataExplorer({ routes }) {
     setFilters((f) => ({ ...f, [k]: e.target.value }));
   };
 
-  const exportUrl = () => rawQuotesCsvUrl({ ...filters, limit: 5000 });
+  // CSV export via authorized fetch → blob (a plain link can't send the Bearer header)
+  const exportCsv = async () => {
+    try {
+      const qs = new URLSearchParams(
+        Object.entries({ ...filters, limit: 5000 }).filter(([, v]) => v !== '' && v != null)
+      ).toString();
+      const res = await fetch(rawQuotesCsvUrl({}).split('?')[0] + `?${qs}&format=csv`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `apix_quotes_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      setNotice?.(`Export failed: ${e.message}`);
+    }
+  };
 
   const downloadJson = () => {
     const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
@@ -90,9 +109,9 @@ export default function DataExplorer({ routes }) {
           </select>
         </div>
         <div className="flex gap-2 pb-0.5">
-          <a href={exportUrl()} className="btn bg-brand-600 text-white hover:bg-brand-700">
+          <button onClick={exportCsv} className="btn bg-brand-600 text-white hover:bg-brand-700">
             <Download className="h-4 w-4" /> CSV
-          </a>
+          </button>
           <button onClick={downloadJson} className="btn border border-slate-200 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
             <FileJson className="h-4 w-4" /> JSON
           </button>
