@@ -1,6 +1,6 @@
 /**
  * Scraper control endpoints — trigger, status.
- * POST /trigger and GET /status are key-protected (x-api-key, timing-safe compare).
+ * Gated by admin JWT (Authorization: Bearer) **or** x-api-key (spec model).
  */
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
@@ -10,20 +10,23 @@ import { getStore } from '../store/index.js';
 import { runScrapeCycle } from '../scraper/orchestrator.js';
 
 const router = Router();
-const triggerLimiter = rateLimit({ windowMs: 60_000, limit: 6, standardHeaders: 'draft-7', legacyHeaders: false });
 
-/** Constant-time API key check — prevents key-timing oracles on these endpoints. */
-export function keyMatches(presented) {
-  if (!presented) return false;
-  // Compare SHA-256 digests: fixed length, leaks nothing about the plaintext key.
-  const a = createHash('sha256').update(String(presented)).digest();
+/** Admin JWT or x-api-key — attachUser runs before this router. */
+export function scraperGate(req) {
+  if (req.user?.role === 'admin') return true;
+  const key = req.get('x-api-key');
+  if (!key) return false;
+  const a = createHash('sha256').update(String(key)).digest();
   const b = createHash('sha256').update(env.scrapeApiKey).digest();
-  return timingSafeEqual(a, b);
+  return timingSafeEqual(a, b); // constant-time; length differences leak nothing
 }
 
-/** GET /api/v1/scraper/status — admin-JWT-protected at mount; runs log is sensitive. */
-router.get('/status', async (_req, res, next) => {
+const triggerLimiter = rateLimit({ windowMs: 60_000, limit: 6, standardHeaders: 'draft-7', legacyHeaders: false });
+
+/** GET /api/v1/scraper/status — gated (run log is sensitive). */
+router.get('/status', async (req, res, next) => {
   try {
+    if (!scraperGate(req)) return res.status(401).json({ error: 'Unauthorized — admin session or x-api-key required' });
     const store = getStore();
     const runs = await store.findRuns(10);
     const last = runs.find((r) => r.status === 'completed');
@@ -42,8 +45,8 @@ router.get('/status', async (_req, res, next) => {
 /** POST /api/v1/scraper/trigger */
 router.post('/trigger', triggerLimiter, async (req, res, next) => {
   try {
-    if (!keyMatches(req.get('x-api-key'))) {
-      return res.status(401).json({ error: 'Unauthorized — provide x-api-key header' });
+    if (!scraperGate(req)) {
+      return res.status(401).json({ error: 'Unauthorized — admin session or x-api-key required' });
     }
     const { force = false, mode, routes, windows } = req.body || {};
     if (mode && !['simulate', 'live'].includes(mode)) {

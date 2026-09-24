@@ -9,9 +9,8 @@ import HeatmapTab from './components/HeatmapTab.jsx';
 import ElasticityTab from './components/ElasticityTab.jsx';
 import DataExplorer from './components/DataExplorer.jsx';
 import ScraperKeyModal from './components/ScraperKeyModal.jsx';
-import LoginGate from './components/LoginGate.jsx';
-import { AuthProvider, useAuth } from './services/auth.jsx';
-import { KeyRound, Loader2 } from 'lucide-react';
+import SplashScreen from './components/SplashScreen.jsx';
+import { KeyRound } from 'lucide-react';
 import Footer from './components/Footer.jsx';
 
 const TABS = [
@@ -24,7 +23,7 @@ const TABS = [
 function ScraperControls({ status, onRun, running, notice, onManageKey }) {
   const sync = status?.lastSync ? new Date(status.lastSync) : null;
   return (
-    <div className="card flex flex-wrap items-center justify-between gap-3 p-3">
+    <div className="card anim-fade-up flex flex-wrap items-center justify-between gap-3 p-3" style={{ '--d': '220ms' }}>
       <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
         <Zap className="h-4 w-4 text-brand-500" />
         <span>
@@ -52,7 +51,9 @@ function ScraperControls({ status, onRun, running, notice, onManageKey }) {
 }
 
 function Dashboard() {
-  const { user, token, login, register, logout } = useAuth();
+  // Public prototype: no login gate. Analytics are open; scraper control is
+  // protected by the x-api-key only (original MoSPI spec model).
+  const token = null;
   const [tab, setTab] = useState('trend');
   const [timeframe, setTimeframe] = useState('30d');
   const [current, setCurrent] = useState(null);
@@ -66,6 +67,13 @@ function Dashboard() {
   const [notice, setNotice] = useState(null);
   const [keyModalOpen, setKeyModalOpen] = useState(false);
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('apix-api-key') || '');
+  const [booting, setBooting] = useState(true);
+
+  // Splash screen: show at least ~900ms so the entrance feels intentional.
+  useEffect(() => {
+    const t = setTimeout(() => setBooting(false), current ? 400 : 1400);
+    return () => clearTimeout(t);
+  }, [current]);
 
   const loadCore = useCallback(async () => {
     const [cur, hist, hm, ela, rts] = await Promise.allSettled([
@@ -76,12 +84,12 @@ function Dashboard() {
       api.routes(token),
     ]);
     if (cur.status === 'fulfilled') setCurrent(cur.value);
-    else setError('Data unavailable — API unreachable or session expired. Try signing in again.');
+    else setError('Data unavailable — API unreachable. Start it with npm run dev:server.');
     if (hist.status === 'fulfilled') setHistorical(hist.value);
     if (hm.status === 'fulfilled') setHeatmap(hm.value);
     if (ela.status === 'fulfilled') setElasticity(ela.value);
     if (rts.status === 'fulfilled') setRoutes(rts.value.routes);
-  }, [timeframe]);
+  }, [timeframe, token]);
 
   const loadStatus = useCallback(() => api.scraperStatus(token).then(setStatus).catch(() => {}), [token]);
 
@@ -122,26 +130,27 @@ function Dashboard() {
     setTimeout(() => setNotice(null), 4000);
   };
 
+  if (booting) return <SplashScreen />;
+
   return (
     <div className="min-h-screen">
-      <Header status={status} user={user} onLogout={logout} />
-      <main className="mx-auto max-w-7xl space-y-4 px-4 py-6 sm:px-6">
+      <Header status={status} />
+      <main className="anim-fade-in mx-auto max-w-7xl space-y-4 px-4 py-6 sm:px-6">
         {error && (
           <div className="card flex items-center gap-3 border-red-200 p-4 text-sm text-red-600 dark:border-red-900/60 dark:text-red-400">
             <AlertTriangle className="h-5 w-5 shrink-0" />
             <div>
               <p className="font-semibold">Backend connection failed</p>
-              <p className="text-xs opacity-80">{error} Start it with <code className="rounded bg-red-50 px-1 dark:bg-red-950/60">npm run dev:server</code>.</p>
+              <p className="text-xs opacity-80">{error}</p>
             </div>
           </div>
         )}
 
         <MetricCards data={current} />
-        {!user && <p className="text-xs text-slate-400">Signed out — data below is from the last loaded session.</p>}
         <ScraperControls status={status} onRun={runCycle} running={running} notice={notice} onManageKey={() => setKeyModalOpen(true)} />
         <ScraperKeyModal open={keyModalOpen} onClose={() => setKeyModalOpen(false)} onSave={saveKey} currentKey={apiKey} />
 
-        <div className="border-b border-slate-200 dark:border-slate-800">
+        <div className="anim-fade-up border-b border-slate-200 dark:border-slate-800" style={{ '--d': '280ms' }}>
           <nav className="-mb-px flex gap-1 overflow-x-auto">
             {TABS.map((t) => {
               const Icon = t.icon;
@@ -162,7 +171,7 @@ function Dashboard() {
           </nav>
         </div>
 
-        <div>
+        <div key={tab} className="anim-fade-in">
           {tab === 'trend' && (
             <IndexTrend historical={historical} timeframe={timeframe} setTimeframe={setTimeframe} routes={routes} />
           )}
@@ -176,25 +185,10 @@ function Dashboard() {
   );
 }
 
-function AuthenticatedApp() {
-  const { user, booting, login, register } = useAuth();
-  if (booting) {
-    return (
-      <div className="flex min-h-screen items-center justify-center gap-3 text-slate-400">
-        <Loader2 className="h-5 w-5 animate-spin" /> Restoring session…
-      </div>
-    );
-  }
-  if (!user) return <LoginGate onLogin={login} onRegister={register} />;
-  return <Dashboard />;
-}
-
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <AuthenticatedApp />
-      </AuthProvider>
+      <Dashboard />
     </ThemeProvider>
   );
 }

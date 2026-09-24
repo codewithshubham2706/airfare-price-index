@@ -85,21 +85,29 @@ describe('Auth contract', () => {
     }
   });
 
-  it('blocks protected data endpoints without a token', async () => {
-    await request(app).get('/api/v1/index/current').expect(401);
-    await request(app).get('/api/v1/routes/heatmap').expect(401);
-    await request(app).get('/api/v1/quotes?limit=1').expect(401);
-    await request(app).get('/api/v1/scraper/status').expect(401);
+  it('analytics are public read-only in prototype mode', async () => {
+    await request(app).get('/api/v1/index/current').expect(200);
+    await request(app).get('/api/v1/routes/heatmap').expect(200);
+    await request(app).get('/api/v1/quotes?limit=1').expect(200);
   });
 
-  it('viewer can read analytics but not trigger scraper', async () => {
-    await request(app).get('/api/v1/index/current').set('Authorization', `Bearer ${viewerToken}`).expect(200);
-    const trig = await request(app)
+  it('scraper control stays gated without admin or key', async () => {
+    await request(app).get('/api/v1/scraper/status').expect(401);
+    await request(app).post('/api/v1/scraper/trigger').send({}).expect(401);
+    const viewerTrig = await request(app)
       .post('/api/v1/scraper/trigger')
       .set('Authorization', `Bearer ${viewerToken}`)
-      .set('x-api-key', TRIGGER_KEY)
       .send({ force: true, mode: 'simulate' });
-    assert.equal(trig.status, 403);
+    assert.equal(viewerTrig.status, 401); // viewer role insufficient
+  });
+
+  it('admin JWT alone can control the scraper (no key needed)', async () => {
+    await request(app).get('/api/v1/scraper/status').set('Authorization', `Bearer ${adminToken}`).expect(200);
+    await request(app)
+      .post('/api/v1/scraper/trigger')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ force: true, mode: 'simulate' })
+      .expect(202);
   });
 });
 
@@ -155,18 +163,18 @@ describe('APIx v1 contract (authenticated)', () => {
     assert.match(csv.text, /^scrapedAt,source,routeId/);
   });
 
-  it('POST /api/v1/scraper/trigger — admin with key completes a cycle', async () => {
+  it('POST /api/v1/scraper/trigger — x-api-key alone completes a cycle', async () => {
     const res = await request(app)
       .post('/api/v1/scraper/trigger')
-      .set({ Authorization: `Bearer ${adminToken}`, 'x-api-key': TRIGGER_KEY })
+      .set('x-api-key', TRIGGER_KEY)
       .send({ force: true, mode: 'simulate' })
       .expect(202);
     assert.equal(res.body.ok, true);
     assert.ok(res.body.run.cleanCount > 0);
   });
 
-  it('GET /api/v1/scraper/status exposes engine health (admin)', async () => {
-    const res = await request(app).get('/api/v1/scraper/status').set(auth()).expect(200);
+  it('GET /api/v1/scraper/status via key exposes engine health', async () => {
+    const res = await request(app).get('/api/v1/scraper/status').set('x-api-key', TRIGGER_KEY).expect(200);
     assert.ok(['simulate', 'live'].includes(res.body.mode));
     assert.ok(res.body.lastSync != null);
   });
