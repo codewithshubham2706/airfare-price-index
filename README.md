@@ -1,5 +1,11 @@
 # APIx — Real-Time Airfare Price Index (MoSPI & RBI)
 
+[![CI](https://github.com/codewithshubham2706/airfare-price-index/actions/workflows/ci.yml/badge.svg)](https://github.com/codewithshubham2706/airfare-price-index/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![API Docs](https://img.shields.io/badge/Swagger-%2Fapi%2Fdocs-85ea2d?logo=swagger&logoColor=white)](/api/docs)
+
+**Repo:** [github.com/codewithshubham2706/airfare-price-index](https://github.com/codewithshubham2706/airfare-price-index)
+
 Enterprise-grade production prototype of an automated **domestic airfare price index** for the
 National Statistical Office (MoSPI) and the Reserve Bank of India (RBI).
 
