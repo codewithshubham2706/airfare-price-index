@@ -98,6 +98,12 @@ class MemoryStore {
     return { email: user.email, name: user.name, role: user.role, createdAt: user.createdAt };
   }
   async countUsers() { return this.users.length; }
+  async updateUserRole(email, role) {
+    const u = this.users.find((x) => x.email === String(email).toLowerCase());
+    if (!u) return null;
+    u.role = role;
+    return { email: u.email, role: u.role };
+  }
 
   async trimIndexTimeline(keepDates) {
     const set = new Set(keepDates.map((d) => d.getTime()));
@@ -196,6 +202,14 @@ class MongoStore {
     return pub;
   }
   async countUsers() { return this.db.collection('users').countDocuments({}); }
+  async updateUserRole(email, role) {
+    const r = await this.db.collection('users').findOneAndUpdate(
+      { email: String(email).toLowerCase() },
+      { $set: { role } },
+      { returnDocument: 'after', projection: { email: 1, role: 1 } }
+    );
+    return r || null;
+  }
 }
 
 let storeInstance = null;

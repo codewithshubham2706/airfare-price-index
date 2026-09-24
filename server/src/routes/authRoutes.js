@@ -40,6 +40,25 @@ router.post('/login', authLimiter, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+/**
+ * PATCH /api/v1/auth/users/role — admin-only role management.
+ * Body: { email, role: 'admin'|'viewer' }
+ */
+router.patch('/users/role', async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin role required' });
+    }
+    const { email, role } = req.body || {};
+    if (!email || !['admin', 'viewer'].includes(role)) {
+      return res.status(400).json({ error: 'email and role (admin|viewer) required' });
+    }
+    const updated = await getStore().updateUserRole(email, role);
+    if (!updated) return res.status(404).json({ error: 'No such user' });
+    res.json({ ok: true, ...updated, note: 'User must re-login to receive a token with the new role' });
+  } catch (err) { next(err); }
+});
+
 /** GET /api/v1/auth/me */
 router.get('/me', async (req, res, next) => {
   try {
