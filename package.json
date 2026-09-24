@@ -1,0 +1,19 @@
+{
+  "name": "apix-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time Airfare Price Index (APIx) for MoSPI & RBI — Express API, Playwright scraper engine, React dashboard",
+  "scripts": {
+    "setup": "npm --prefix server install && npm --prefix client install",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "test": "npm --prefix server test",
+    "backfill": "npm --prefix server run backfill"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

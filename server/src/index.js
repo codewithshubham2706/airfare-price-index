@@ -1,0 +1,81 @@
+/**
+ * APIx — Express application factory (exported for tests) + server bootstrap.
+ */
+import express from 'express';
+import cors from 'cors';
+import morgan from 'morgan';
+import swaggerUi from 'swagger-ui-express';
+import rateLimit from 'express-rate-limit';
+import { env } from './env.js';
+import { connectStore, getStore } from './store/index.js';
+import { openapiSpec } from './openapi.js';
+import indexRoutes from './routes/indexRoutes.js';
+import routeRoutes from './routes/routeRoutes.js';
+import scraperRoutes from './routes/scraperRoutes.js';
+import quoteRoutes from './routes/quoteRoutes.js';
+import { startCron } from './cron.js';
+
+export function createApp() {
+  const app = express();
+  app.disable('x-powered-by');
+  app.use(express.json({ limit: '256kb' }));
+  app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
+
+  const origins = String(env.corsOrigin).split(',').map((s) => s.trim()).filter(Boolean);
+  app.use(cors({ origin: origins.includes('*') ? true : origins }));
+
+  // Global API rate limit — civic infrastructure stays gentle.
+  app.use('/api/', rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }));
+
+  // Docs
+  app.get('/api/openapi.json', (_req, res) => res.json(openapiSpec));
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, { customSiteTitle: 'APIx — API Documentation' }));
+
+  // v1
+  app.use('/api/v1/index', indexRoutes);
+  app.use('/api/v1/routes', routeRoutes);
+  app.use('/api/v1/scraper', scraperRoutes);
+  app.use('/api/v1/quotes', quoteRoutes);
+
+  app.get('/api/v1/health', (_req, res) => {
+    res.json({ status: 'ok', service: 'apix-api', version: '1.0.0', time: new Date().toISOString() });
+  });
+
+  // JSON 404 for unknown API paths (HTML 404 elsewhere)
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'Not found', hint: 'See /api/docs for the endpoint catalog' });
+  });
+
+  // Errors
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, _req, res, _next) => {
+    console.error('[api] error:', err.message);
+    res.status(err.status || 500).json({ error: err.message || 'Internal error' });
+  });
+
+  return app;
+}
+
+/** Bootstrap when run directly. */
+const isMain = process.argv[1] && process.argv[1].endsWith('index.js');
+if (isMain) {
+  const app = createApp();
+  await connectStore(console);
+
+  // Demo mode (in-memory store): auto-seed history so charts are never empty.
+  if (!env.mongoUri) {
+    const timeline = await getStore().findIndexPoints({ routeId: null, windowDays: null });
+    if (timeline.length === 0) {
+      const { seedHistory } = await import('./services/demoSeed.js');
+      await seedHistory(90, console);
+    }
+  }
+
+  const server = app.listen(env.port, () => {
+    console.log(`[apix] API listening on http://localhost:${env.port} (docs: /api/docs)`);
+    startCron();
+  });
+  const shutdown = () => server.close(() => process.exit(0));
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
