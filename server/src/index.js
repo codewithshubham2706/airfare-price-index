@@ -100,13 +100,15 @@ if (isMain) {
   const app = createApp();
   await connectStore(console);
 
-  // Demo mode (in-memory store): auto-seed history so charts are never empty.
-  if (!env.mongoUri) {
-    const timeline = await getStore().findIndexPoints({ routeId: null, windowDays: null });
-    if (timeline.length === 0) {
-      const { seedHistory } = await import('./services/demoSeed.js');
-      await seedHistory(90, console);
-    }
+  // Auto-seed 90 days of simulated history on FIRST boot only (empty timeline),
+  // for any store kind — the dashboard is never empty, and with MongoDB the
+  // history then survives restarts instead of being regenerated per boot.
+  const timeline = await getStore().findIndexPoints({ routeId: null, windowDays: null });
+  if (timeline.length === 0) {
+    const { seedHistory } = await import('./services/demoSeed.js');
+    await seedHistory(90, console);
+  } else {
+    console.log(`[apix] index timeline present (${timeline.length} days) — persistence OK, no seed needed`);
   }
 
   const server = app.listen(env.port, () => {

@@ -9,6 +9,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "backfill": "node scripts/backfill.js",
+    "verify:atlas": "node scripts/verifyAtlas.js",
     "test": "node --test tests/contract.test.js"
   },
   "dependencies": {
