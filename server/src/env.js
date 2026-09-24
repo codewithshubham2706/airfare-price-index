@@ -6,7 +6,7 @@ const portNum = Number(process.env.PORT);
 export const env = {
   port: Number.isInteger(portNum) && portNum > 0 ? portNum : 8787,
   nodeEnv: process.env.NODE_ENV || 'development',
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173,http://localhost:4173,http://127.0.0.1:5173,http://127.0.0.1:4173',
 
   mongoUri: process.env.MONGODB_URI || '',
   mongoDb: process.env.MONGODB_DB || 'apix',
