@@ -16,20 +16,23 @@ export function AuthProvider({ children }) {
       .finally(() => setBooting(false));
   }, [token]);
 
-  const login = async (email, password) => {
-    const d = await api.login(email, password);
+  const persist = (d) => {
     localStorage.setItem('apix-token', d.token);
     setToken(d.token);
     setUser(d.user);
     return d.user;
   };
 
+  const login = async (email, password) => {
+    const d = await api.login(email, password);
+    if (!d.ok) throw new Error(d.body?.error || `Login failed (${d.status})`);
+    return persist(d);
+  };
+
   const register = async (email, password, name) => {
     const d = await api.register(email, password, name);
-    localStorage.setItem('apix-token', d.token);
-    setToken(d.token);
-    setUser(d.user);
-    return d.user;
+    if (!d.ok) throw new Error(d.body?.error || `Registration failed (${d.status})`);
+    return persist(d);
   };
 
   const logout = () => {

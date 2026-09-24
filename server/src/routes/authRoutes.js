@@ -3,16 +3,22 @@
  */
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import { env } from '../env.js';
 import { getStore } from '../store/index.js';
 import { createUser, authenticate, publicUser, signToken, validateRegistration } from '../services/auth.js';
 
 const router = Router();
 const authLimiter = rateLimit({
   windowMs: 10 * 60_000,
-  limit: 50, // forgiving of typos; still throttles credential stuffing
+  limit: 50,
+  // Key per account, not per IP: shared-NAT offices and localhost dev servers
+  // must not let one user's typos lock everyone out.
+  keyGenerator: (req) => `${req.ip}:${String(req.body?.email || 'anon').toLowerCase()}`,
+  // Local/development is friction-free; production keeps brute-force protection.
+  skip: () => env.nodeEnv !== 'production',
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: 'Too many attempts — try again in 10 minutes' },
+  message: { error: 'Too many attempts for this account — try again in 10 minutes' },
 });
 
 /** POST /api/v1/auth/register */
