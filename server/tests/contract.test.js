@@ -17,6 +17,10 @@ import { isOffPeakNow } from '../src/utils/time.js';
 let app;
 let store;
 
+// The trigger key must come from the same env the server reads (dotenv loads
+// server/.env at import time) so the suite passes with any deployed key.
+const TRIGGER_KEY = process.env.SCRAPE_API_KEY || 'apix-demo-key';
+
 before(async () => {
   await connectStore(console);
   store = getStore();
@@ -98,7 +102,7 @@ describe('Scraper control & compliance', () => {
   it('POST /api/v1/scraper/trigger with key completes a cycle', async () => {
     const res = await request(app)
       .post('/api/v1/scraper/trigger')
-      .set('x-api-key', 'apix-demo-key')
+      .set('x-api-key', TRIGGER_KEY)
       .send({ force: true, mode: 'simulate' })
       .expect(202);
     assert.equal(res.body.ok, true);
@@ -114,7 +118,7 @@ describe('Scraper control & compliance', () => {
       // Force module-level env refresh
       const res = await request(app)
         .post('/api/v1/scraper/trigger')
-        .set('x-api-key', 'apix-demo-key')
+        .set('x-api-key', TRIGGER_KEY)
         .send({ force: false });
       // Either accepted (if we happen to be inside 02:00–04:00 IST) or rejected with 409
       assert.ok([202, 409].includes(res.status), `got ${res.status}`);
