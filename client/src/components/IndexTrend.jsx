@@ -91,9 +91,9 @@ export default function IndexTrend({ historical, timeframe, setTimeframe, routes
               <Tooltip content={<ChartTooltip />} />
               <ReferenceLine y={100} stroke="#94a3b8" strokeDasharray="6 4" label={{ value: 'Base 100', fontSize: 10, fill: 'currentColor', position: 'insideBottomRight' }} />
               {showBaseline && (
-                <Line type="monotone" dataKey="baseline" name="7-day baseline" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 3" dot={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="baseline" name="7-day baseline" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 3" dot={false} animationDuration={2200} animationBegin={350} animationEasing="ease-out" />
               )}
-              <Line type="monotone" dataKey="value" name="APIx" stroke="#1d6fec" strokeWidth={2.4} dot={false} activeDot={{ r: 4 }} />
+              <Line type="monotone" dataKey="value" name="APIx" stroke="#1d6fec" strokeWidth={2.4} dot={false} activeDot={{ r: 4 }} animationDuration={1600} animationEasing="ease-out" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -128,7 +128,7 @@ function RouteOverlay({ routeId, timeframe }) {
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} minTickGap={50} />
             <YAxis domain={['dataMin - 3', 'dataMax + 3']} tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} width={40} />
             <Tooltip content={<ChartTooltip />} />
-            <Line type="monotone" dataKey="value" name={routeId} stroke="#7c3aed" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="value" name={routeId} stroke="#7c3aed" strokeWidth={2} dot={false} animationDuration={1200} animationEasing="ease-out" />
           </LineChart>
         </ResponsiveContainer>
       </div>

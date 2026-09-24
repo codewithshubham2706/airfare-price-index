@@ -2,16 +2,23 @@ import { useState } from 'react';
 import { inr, pct } from '../services/api.js';
 import { WINDOWS, heatColor } from '../services/format.js';
 import { Flame } from 'lucide-react';
+import AnimatedNumber from './AnimatedNumber.jsx';
 
-function Cell({ cell }) {
+/** Heatmap cell — staggered scale-in + ticking numbers. */
+function Cell({ cell, row, col }) {
   return (
     <td className="p-0.5">
       <div
-        className={`group relative flex h-12 min-w-[64px] cursor-default flex-col items-center justify-center rounded-md text-center transition-transform hover:scale-[1.04] ${heatColor(cell.pctChange)}`}
+        className={`group relative flex h-12 min-w-[64px] cursor-default flex-col items-center justify-center rounded-md text-center transition-transform hover:scale-[1.04] anim-scale-in ${heatColor(cell.pctChange)}`}
+        style={{ '--d': `${(row * WINDOWS.length + col) * 18}ms` }}
         title={`${cell.label}: ${inr(cell.fare)} (baseline ${inr(cell.baseFare)}, ${pct(cell.pctChange)})`}
       >
-        <span className="num text-[13px] font-bold leading-none">{cell.pctChange == null ? '—' : `${cell.pctChange > 0 ? '+' : ''}${cell.pctChange.toFixed(1)}%`}</span>
-        <span className="mt-0.5 text-[10px] leading-none opacity-75">{cell.fare != null ? inr(cell.fare) : '—'}</span>
+        <span className="num text-[13px] font-bold leading-none">
+          <AnimatedNumber value={cell.pctChange} decimals={1} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`} />
+        </span>
+        <span className="mt-0.5 text-[10px] leading-none opacity-75">
+          <AnimatedNumber value={cell.fare} format={(v) => inr(Math.round(v))} />
+        </span>
       </div>
     </td>
   );
@@ -87,7 +94,7 @@ export default function HeatmapTab({ heatmap }) {
             </tr>
           </thead>
           <tbody>
-            {routes.map((r) => {
+            {routes.map((r, rowIdx) => {
               const spark = r.spark || [];
               const first = spark[0]?.value;
               const last = spark[spark.length - 1]?.value;
@@ -103,8 +110,8 @@ export default function HeatmapTab({ heatmap }) {
                       </span>
                     </div>
                   </td>
-                  {WINDOWS.map((w) => (
-                    <Cell key={w.days} cell={byWindow[w.days] || { label: w.label, pctChange: null, fare: null }} />
+                  {WINDOWS.map((w, col) => (
+                    <Cell key={w.days} cell={byWindow[w.days] || { label: w.label, pctChange: null, fare: null }} row={rowIdx} col={col} />
                   ))}
                   <td className={`num pl-3 text-right text-sm font-semibold ${d30 == null ? 'text-slate-400' : d30 >= 0 ? 'text-red-500' : 'text-emerald-500'}`}>
                     {d30 == null ? '—' : pct(d30, 1)}

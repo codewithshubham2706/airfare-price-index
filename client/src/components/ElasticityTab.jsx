@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import { inr } from '../services/api.js';
 import { ROUTE_COLORS } from '../services/format.js';
+import AnimatedNumber from './AnimatedNumber.jsx';
 
 export default function ElasticityTab({ elasticity }) {
   const [selected, setSelected] = useState(() => new Set(['DEL-BOM', 'DEL-BLR', 'BOM-BLR']));
@@ -92,6 +93,9 @@ export default function ElasticityTab({ elasticity }) {
                     strokeWidth={2.2}
                     dot={{ r: 3 }}
                     activeDot={{ r: 5 }}
+                    animationDuration={1500}
+                    animationBegin={i * 130}
+                    animationEasing="ease-out"
                   />
                 ) : null
               )}
@@ -101,14 +105,14 @@ export default function ElasticityTab({ elasticity }) {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {premiums.slice(0, 6).map((r) => (
-          <div key={r.routeId} className="card flex items-center justify-between p-3">
+        {premiums.slice(0, 6).map((r, i) => (
+          <div key={r.routeId} className="card lift anim-fade-up flex items-center justify-between p-3" style={{ '--d': `${i * 70}ms` }}>
             <div>
               <p className="num text-sm font-bold">{r.label}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">T+1 premium over T+45</p>
             </div>
             <span className="num rounded-lg bg-red-50 px-2.5 py-1.5 text-lg font-bold text-red-600 dark:bg-red-950/60 dark:text-red-400">
-              ×{r.premium.toFixed(2)}
+              ×<AnimatedNumber value={r.premium} decimals={2} />
             </span>
           </div>
         ))}
