@@ -45,14 +45,14 @@ describe('Auth contract', () => {
   });
 
   it('open-auth can be disabled via APIX_OPEN_AUTH=false', async () => {
-    process.env.APIX_OPEN_AUTH = 'false';
     const mod = await import('../src/env.js');
+    process.env.APIX_OPEN_AUTH = 'false';
     try {
       assert.equal(mod.env.openAuth, false, 'openAuth must be off when explicitly disabled');
     } finally {
       delete process.env.APIX_OPEN_AUTH;
-      await import('../src/env.js');
     }
+    assert.equal(mod.env.openAuth, true, 'openAuth restores when the flag is removed');
   });
 
   it('issues verifiable JWTs with correct role claims', () => {

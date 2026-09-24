@@ -20,10 +20,16 @@ export const env = {
 
   baselineDays: Number(process.env.BASELINE_DAYS || 7),
 
-  // Prototype convenience: in development, login accepts ANY credentials and
-  // auto-registers unknown emails as admins. Never active outside development.
-  openAuth: (process.env.NODE_ENV || 'development') !== 'production' && process.env.APIX_OPEN_AUTH !== 'false',
 };
+
+// Prototype convenience: in development, login accepts ANY credentials and
+// auto-registers unknown emails as admins. Never active outside development.
+// A live getter so toggling APIX_OPEN_AUTH takes effect without a restart.
+Object.defineProperty(env, 'openAuth', {
+  get: () => env.nodeEnv !== 'production' && process.env.APIX_OPEN_AUTH !== 'false',
+  enumerable: true,
+  configurable: true,
+});
 
 // Startup guard: the demo default is fine locally, never in production.
 if (env.nodeEnv === 'production' && env.scrapeApiKey.length < 32) {
